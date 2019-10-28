@@ -229,7 +229,8 @@ for i, (batch, output) in enumerate(tqdm.tqdm(zip(
             probability = cv2.resize(probability, dsize=(525, 350), interpolation=cv2.INTER_LINEAR)
         probabilities[i * 4 + j, :, :] = probability
 
-
+# This is a test
+			     
 # Step 2 of 3: Optimal threshold in "class_params": 
 class_params = {}
 for class_id in range(4):
