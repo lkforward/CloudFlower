@@ -16,11 +16,11 @@ class CloudSeg(object):
 		
 		self.num_workers = 0
 		self.bs = 16
-		train_dataset = CloudDataset(df=train, datatype='train', img_ids=train_ids, transforms = get_training_augmentation(), preprocessing=get_preprocessing(preprocessing_fn))
-		valid_dataset = CloudDataset(df=train, datatype='valid', img_ids=valid_ids, transforms = get_validation_augmentation(), preprocessing=get_preprocessing(preprocessing_fn))
+		self.train_dataset = CloudDataset(df=train, datatype='train', img_ids=train_ids, transforms = get_training_augmentation(), preprocessing=get_preprocessing(preprocessing_fn))
+		self.valid_dataset = CloudDataset(df=train, datatype='valid', img_ids=valid_ids, transforms = get_validation_augmentation(), preprocessing=get_preprocessing(preprocessing_fn))
 
-		train_loader = DataLoader(train_dataset, batch_size=bs, shuffle=True, num_workers=num_workers)
-		valid_loader = DataLoader(valid_dataset, batch_size=bs, shuffle=False, num_workers=num_workers)
+		self.train_loader = DataLoader(train_dataset, batch_size=bs, shuffle=True, num_workers=num_workers)
+		self.valid_loader = DataLoader(valid_dataset, batch_size=bs, shuffle=False, num_workers=num_workers)
 
 		self.loaders = {
 		    "train": train_loader,
@@ -31,7 +31,7 @@ class CloudSeg(object):
 
 	def train(self, plot_training_metrics = False):
 		num_epochs = 19
-		logdir = "./logs/segmentation"
+		self.logdir = "./logs/segmentation"
 
 		# model, criterion, optimizer
 		optimizer = torch.optim.Adam([
@@ -59,7 +59,7 @@ class CloudSeg(object):
 		
 		if plot_training_metrics:
 			utils.plot_metrics(
-			    logdir=logdir, 
+			    logdir=self.logdir, 
 			    # specify which metrics we want to plot
 			    metrics=["loss", "dice", 'lr', '_base/lr']
 			)
@@ -67,6 +67,101 @@ class CloudSeg(object):
 		pass
 
 	def select_param(self, plot_samples=False):
+		##################################
+		# Get the optimal parameter for each cloud class:
+		#
+		# INPUTS: runner.
+		# OUTPUTS: class_params
+		##################################
+		valid_dataset = self.valid_dataset
+		valid_loader = self.valid_loader
+		loader = self.loader
+		runner = self.runner
+		model = self.model
+		logdir = self.logdir
+
+		# Step 1 of 3: Get the probability 
+		# NOTE: What does the "probability" do?
+		encoded_pixels = []
+		loaders = {"infer": valid_loader}
+		runner.infer(
+		    model=model,
+		    loaders=loaders,
+		    callbacks=[
+			CheckpointCallback(
+			    resume=f"{logdir}/checkpoints/best.pth"),
+			InferCallback()
+		    ],
+		)
+
+		valid_masks = []
+		probabilities = np.zeros((2220, 350, 525))
+		for i, (batch, output) in enumerate(tqdm.tqdm(zip(
+			valid_dataset, runner.callbacks[0].predictions["logits"]))):
+		    image, mask = batch
+		    for m in mask:
+			if m.shape != (350, 525):
+			    m = cv2.resize(m, dsize=(525, 350), interpolation=cv2.INTER_LINEAR)
+			valid_masks.append(m)
+
+		    for j, probability in enumerate(output):
+			if probability.shape != (350, 525):
+			    probability = cv2.resize(probability, dsize=(525, 350), interpolation=cv2.INTER_LINEAR)
+			probabilities[i * 4 + j, :, :] = probability
+
+		# Step 2 of 3: Optimal threshold in "class_params": 
+		class_params = {}
+		for class_id in range(4):
+		    print(class_id)
+		    attempts = []
+		    for t in range(0, 100, 5):
+			t /= 100
+			for ms in [0, 100, 1200, 5000, 10000]:
+			    masks = []
+			    for i in range(class_id, len(probabilities), 4):
+				probability = probabilities[i]
+				predict, num_predict = post_process(sigmoid(probability), t, ms)
+				masks.append(predict)
+
+			    d = []
+			    for i, j in zip(masks, valid_masks[class_id::4]):
+				if (i.sum() == 0) & (j.sum() == 0):
+				    d.append(1)
+				else:
+				    d.append(dice(i, j))
+
+			    attempts.append((t, ms, np.mean(d)))
+
+		    attempts_df = pd.DataFrame(attempts, columns=['threshold', 'size', 'dice'])
+		    attempts_df = attempts_df.sort_values('dice', ascending=False)
+		    print(attempts_df.head())
+
+		    best_threshold = attempts_df['threshold'].values[0]
+		    best_size = attempts_df['size'].values[0]
+		    class_params[class_id] = (best_threshold, best_size)
+			
+		self.class_param = class_param
+
+
+		# Step 3 of 3: Visualize some masks:
+		if plot_samples: 
+			for i, (input, output) in enumerate(zip(
+				valid_dataset, runner.callbacks[0].predictions["logits"])):
+			    image, mask = input
+
+			    image_vis = image.transpose(1, 2, 0)
+			    mask = mask.astype('uint8').transpose(1, 2, 0)
+			    pr_mask = np.zeros((350, 525, 4))
+			    for j in range(4):
+				probability = cv2.resize(output.transpose(1, 2, 0)[:, :, j], dsize=(525, 350), interpolation=cv2.INTER_LINEAR)
+				pr_mask[:, :, j], _ = post_process(sigmoid(probability), class_params[j][0], class_params[j][1])
+			    #pr_mask = (sigmoid(output) > best_threshold).astype('uint8').transpose(1, 2, 0)
+
+
+			    visualize_with_raw(image=image_vis, mask=pr_mask, original_image=image_vis, original_mask=mask, raw_image=image_vis, raw_mask=output.transpose(1, 2, 0))
+
+			    if i >= 2:
+				break
 		pass
 
 	def predict(self, plot_samples=False):
