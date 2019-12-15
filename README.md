@@ -21,8 +21,10 @@ They form the basic utilities to analyze the cloud image dataset.
 -- e. resnet.py: An implementation of resNet (including resNet34 and resNet 50) in pytorch. 
 
 -- f. unet_for_cloud.py: python script corresponding to run_cloud_model.ipynb. 
+
 -- g. CloudSeg.py: Integrading the notebook (run_cloud_model.ipynb) into a compact class for cloud 
 segmentation. 
+
 -- h. unet.ipynb: An working progress to make a customized UNet structure where we can add dilation
 to "upgrade" the existing UNet model. 
 
