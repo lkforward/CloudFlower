@@ -3,6 +3,20 @@
 ## 1. Problem Description
 
 ## 2. Prerequisites
+This project utilizes some computer vision libraries and utilities. In order to run the full work-flow notebook, you should have python 3 and install the following libraries before digging into the notebook:
+
+`!pip install catalyst`
+
+`!pip install pretrainedmodels`
+
+`!pip install git+https://github.com/qubvel/segmentation_models.pytorch`
+
+`!pip install pytorch_toolbelt`
+
+`!pip install torchvision==0.4`
+
+`!pip install albumentations==0.3.2`
+
 
 ## 3. Code structure: 
 -- a. download_kaggle_data.ipynb: A notebook to download the dataset from Kaggle to google storage. 
